@@ -988,7 +988,142 @@ body {
   .view {
     padding: 40px 20px;
   }
+  .navbar {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 1rem;
+  }
+  .nav-links {
+    flex-direction: column;
+    width: 100%;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .nav-links a {
+    width: 100%;
+    padding: 10px;
+    text-align: left;
+  }
+
+  .view {
+    padding: 40px 20px;
+  }
+
+  .features {
+    grid-template-columns: 1fr;
+    padding: 60px 20px;
+  }
+  .feature {
+    padding: 30px 20px;
+  }
+
+  .dashboard-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+  .dashboard-header-content p {
+    font-size: 1rem;
+  }
+  .dashboard-header-actions {
+    flex-wrap: wrap;
+    width: 100%;
+    gap: 10px;
+  }
+  .session-grid {
+    grid-template-columns: 1fr; 
+  }
+
+  .poll-item {
+    padding: 12px;
+  }
+
+  .main-content {
+    grid-template-columns: 1fr;
+  }
+  .left-panel,
+  .right-panel {
+    max-height: none;
+    overflow: visible;
+  }
+  .center-panel {
+    padding: 20px;
+  }
 }
+
+@media (max-width: 992px) {
+  .main-content {
+    grid-template-columns: 1fr;
+  }
+  .left-panel,
+  .right-panel {
+    max-height: none;
+    overflow: visible;
+  }
+  .center-panel {
+    padding: 20px;
+  }
+}
+
+@media (max-width: 480px) {
+  .modal-content {
+    padding: 20px;
+  }
+  .modal-title {
+    font-size: 1.3rem;
+  }
+  .form-group input,
+  .form-group textarea {
+    font-size: 0.95rem;
+  }
+  .modal-actions {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .cancel-button,
+  .submit-button {
+    width: 100%;
+  }
+
+  .navbar h1 {
+    font-size: 1.4rem;
+  }
+  .nav-links a {
+    padding: 8px 12px;
+    font-size: 0.95rem;
+  }
+
+  .view h1 {
+    font-size: clamp(2.5rem, 8vw, 5rem);
+  }
+  .view p {
+    font-size: clamp(1rem, 3vw, 1.5rem);
+  }
+
+  .session-title {
+    font-size: 1.1rem;
+  }
+  .session-code {
+    font-size: 0.8rem;
+  }
+  .session-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}
+
+
+@media (min-width: 1200px) {
+  .features {
+    gap: 40px;
+    padding: 80px 40px;
+  }
+  .feature {
+    padding: 50px 40px;
+  }
+}
+
 html {
   scroll-behavior: smooth;
 }

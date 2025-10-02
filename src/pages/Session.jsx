@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useSocket } from '../context/SocketContext.jsx';
 import api from '../services/api';
 import '../App.css';
 
 const Session = () => {
   const { session_id } = useParams();
   const navigate = useNavigate();
+  const { socket, connected } = useSocket();
   
   const [session, setSession] = useState(null);
   const [polls, setPolls] = useState([]);
@@ -23,10 +25,39 @@ const Session = () => {
 
   useEffect(() => {
     loadSessionData();
-    // Poll for updates every 5 seconds
-    const interval = setInterval(loadPolls, 5000);
-    return () => clearInterval(interval);
   }, [session_id]);
+
+  // Socket.IO event listeners
+  useEffect(() => {
+    if (!socket || !connected) return;
+
+    // Join host room
+    socket.emit('joinSession', { session_code: session?.session_code });
+
+    // Listen for new participants
+    socket.on('joinedSession', (participant) => {
+      console.log('New participant joined:', participant);
+      setParticipants(prev => [...prev, participant]);
+    });
+
+    // Listen for new responses
+    socket.on('responseSubmitted', (data) => {
+      console.log('New response submitted:', data);
+      loadPollResponses(data.poll_id);
+    });
+
+    // Listen for poll updates
+    socket.on('newPoll', (poll) => {
+      console.log('New poll published:', poll);
+      setPolls(prev => [...prev, poll]);
+    });
+
+    return () => {
+      socket.off('joinedSession');
+      socket.off('responseSubmitted');
+      socket.off('newPoll');
+    };
+  }, [socket, connected, session]);
 
   const loadSessionData = async () => {
     try {
@@ -50,12 +81,12 @@ const Session = () => {
       setSession(response.data.data.session);
     } catch (err) {
       console.error('Failed to load session:', err);
+      throw err;
     }
   };
 
   const loadPolls = async () => {
     try {
-      // Get all polls for this session
       const response = await api.get(`/polls/published/${session_id}`);
       setPolls(response.data.data || []);
     } catch (err) {
@@ -65,12 +96,24 @@ const Session = () => {
 
   const loadParticipants = async () => {
     try {
-      const response = await api.get(`/participants/${session_id}/polls`);
-      // This endpoint returns polls, we need a different endpoint for participants
-      // For now, participants will be empty or we need to add this endpoint
-      setParticipants([]);
+      const response = await api.get(`/session/${session_id}/participants`);
+      setParticipants(response.data.data.participants || []);
     } catch (err) {
       console.error('Failed to load participants:', err);
+    }
+  };
+
+  const loadPollResponses = async (poll_id) => {
+    try {
+      const response = await api.get(`/polls/${poll_id}/responses`);
+      // Update poll with responses
+      setPolls(prev => prev.map(p => 
+        p.poll_id === poll_id 
+          ? { ...p, responses: response.data.data }
+          : p
+      ));
+    } catch (err) {
+      console.error('Failed to load poll responses:', err);
     }
   };
 
@@ -78,7 +121,6 @@ const Session = () => {
     e.preventDefault();
     setError('');
 
-    // Validate options
     const validOptions = newPoll.options.filter(opt => opt.trim());
     if (validOptions.length < 2) {
       setError('Please provide at least 2 options');
@@ -111,7 +153,13 @@ const Session = () => {
   const handlePublishPoll = async (poll_id) => {
     try {
       await api.put(`/polls/${poll_id}/publish`, { session_id: parseInt(session_id) });
-      loadPolls(); // Reload to get updated status
+      
+      // Emit socket event
+      if (socket) {
+        socket.emit('publishPoll', { poll_id, session_id });
+      }
+      
+      loadPolls();
     } catch (err) {
       console.error('Failed to publish poll:', err);
       alert('Failed to publish poll');
@@ -121,7 +169,7 @@ const Session = () => {
   const handleClosePoll = async (poll_id) => {
     try {
       await api.put(`/polls/${poll_id}/close`, { session_id: parseInt(session_id) });
-      loadPolls(); // Reload to get updated status
+      loadPolls();
     } catch (err) {
       console.error('Failed to close poll:', err);
       alert('Failed to close poll');
@@ -168,6 +216,11 @@ const Session = () => {
             <span className="badge">Code: {session.session_code}</span>
             <span className="badge">Status: {session.status}</span>
             <span className="badge">Participants: {participants.length}</span>
+            <span className="badge" style={{ 
+              background: connected ? 'linear-gradient(135deg, #48bb78, #38a169)' : '#e53e3e' 
+            }}>
+              {connected ? '● Live' : '○ Offline'}
+            </span>
           </div>
         </div>
         <button onClick={() => setShowCreateModal(true)} className="create-button">
@@ -186,7 +239,12 @@ const Session = () => {
               <div
                 key={poll.poll_id}
                 className={`poll-item ${selectedPollId === poll.poll_id ? 'poll-item-active' : ''}`}
-                onClick={() => setSelectedPollId(poll.poll_id)}
+                onClick={() => {
+                  setSelectedPollId(poll.poll_id);
+                  if (poll.status === 'published' || poll.status === 'closed') {
+                    loadPollResponses(poll.poll_id);
+                  }
+                }}
               >
                 <div className="poll-item-header">
                   <h3 className="poll-item-title">{poll.question}</h3>
@@ -220,7 +278,7 @@ const Session = () => {
         {/* Center Panel - Poll Results */}
         <div className="center-panel">
           {selectedPoll ? (
-            <PollResults poll={selectedPoll} session_id={session_id} />
+            <PollResults poll={selectedPoll} />
           ) : (
             <div className="empty-results">
               <p>Select a poll to view results</p>
@@ -253,7 +311,7 @@ const Session = () => {
         </div>
       </div>
 
-      {/* Create Poll Modal */}
+      {/* Create Poll Modal*/}
       {showCreateModal && (
         <div className="modal" onClick={() => setShowCreateModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -336,20 +394,32 @@ const Session = () => {
   );
 };
 
-// Poll Results Component
-const PollResults = ({ poll, session_id }) => {
-  const [responses, setResponses] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(false);
-  }, [poll.poll_id]);
-
+// Poll Results Component with real-time data
+const PollResults = ({ poll }) => {
   const options = typeof poll.options === 'string' 
     ? JSON.parse(poll.options) 
     : poll.options || [];
 
+  const responses = poll.responses || [];
   const totalResponses = responses.length;
+
+  // Calculate option counts
+  const optionCounts = {};
+  options.forEach(opt => {
+    optionCounts[opt.id] = 0;
+  });
+
+  responses.forEach(response => {
+    const responseData = typeof response.response === 'string'
+      ? JSON.parse(response.response)
+      : response.response;
+    
+    if (responseData.option_ids) {
+      responseData.option_ids.forEach(optId => {
+        optionCounts[optId] = (optionCounts[optId] || 0) + 1;
+      });
+    }
+  });
 
   return (
     <div className="results-container">
@@ -360,12 +430,12 @@ const PollResults = ({ poll, session_id }) => {
       <p className="results-subtitle">Total Responses: {totalResponses}</p>
 
       <div className="results-list">
-        {options.map((option, index) => {
-          const count = 0; // Would calculate from responses
-          const percentage = 0;
+        {options.map((option) => {
+          const count = optionCounts[option.id] || 0;
+          const percentage = totalResponses > 0 ? (count / totalResponses) * 100 : 0;
 
           return (
-            <div key={option.id || index} className="result-item">
+            <div key={option.id} className="result-item">
               <div className="result-header">
                 <span className="result-label">{option.text}</span>
                 <span className="result-count">
